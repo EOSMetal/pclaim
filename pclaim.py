@@ -3,7 +3,6 @@
 import logging
 import argparse
 import os
-import colorlog
 import inspect
 import pprint
 import eospy.cleos
@@ -40,11 +39,9 @@ PERMISSION = args.permission
 BP_ACCOUNT = args.bp_account
 KEY = args.key
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-formatter = colorlog.ColoredFormatter(
-    '%(log_color)s%(asctime)s - %(levelname)s - %(message)s%(reset)s')
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 if DEBUG:
     logger.setLevel(logging.DEBUG)
 if VERBOSE:
@@ -84,10 +81,10 @@ def main():
 
     try:
         resp = cleos.push_transaction(trx, KEY, broadcast=True)
-        print(resp)
+        logger.info(resp)
 
     except Exception as e:
-        print(e)
+        logger.error(e)
 
 
 if __name__ == "__main__":
