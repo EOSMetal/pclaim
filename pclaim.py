@@ -14,25 +14,52 @@ import datetime
 
 pp = pprint.PrettyPrinter(indent=4)
 
-SCRIPT_PATH = os.path.dirname(os.path.abspath(
-    inspect.getfile(inspect.currentframe())))
+SCRIPT_PATH = os.path.dirname(
+    os.path.abspath(inspect.getfile(inspect.currentframe())))
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-v", '--verbose', action="store_true",
-                    dest="verbose", help='Print logged info to screen')
-parser.add_argument("-d", '--debug', action="store_true",
-                    dest="debug", help='Print debug info')
-parser.add_argument('-l', '--log_file', default='{}.log'.format(
-    os.path.basename(__file__).split('.')[0]), help='Log file')
+parser.add_argument("-v",
+                    '--verbose',
+                    action="store_true",
+                    dest="verbose",
+                    help='Print logged info to screen')
+parser.add_argument("-d",
+                    '--debug',
+                    action="store_true",
+                    dest="debug",
+                    help='Print debug info')
+parser.add_argument('-l',
+                    '--log_file',
+                    default='{}.log'.format(
+                        os.path.basename(__file__).split('.')[0]),
+                    help='Log file')
 parser.add_argument('-u', '--uri', required=True, help='RPC endpoint')
-parser.add_argument('-bp', '--bp-account', required=True,
-                    help='BP account')
-parser.add_argument('-p', '--permission', required=True,
+parser.add_argument('-bp', '--bp-account', required=True, help='BP account')
+parser.add_argument('-p',
+                    '--permission',
+                    required=True,
                     help='Permission used for the claim')
-parser.add_argument('-k', '--key', required=True,
-                    help='Private key')
-parser.add_argument('-s', '--symbol', required=False,
-                    help='Symbol', default='EOS')
+parser.add_argument('-k', '--key', required=True, help='Private key')
+parser.add_argument('-s',
+                    '--symbol',
+                    required=False,
+                    help='Symbol',
+                    default='EOS')
+parser.add_argument("-gp",
+                    '--gmb-prod',
+                    action="store_true",
+                    dest="gmb_prod",
+                    help='Claimb GBM prod rewards (WAX Only)')
+parser.add_argument("-gv",
+                    '--gmb-vote',
+                    action="store_true",
+                    dest="gmb_vote",
+                    help='Claimb GBM vote rewards (WAX Only)')
+parser.add_argument("-ge",
+                    '--genesis',
+                    action="store_true",
+                    dest="genesis",
+                    help='Claimb genesis rewards (WAX Only)')
 args = parser.parse_args()
 
 VERBOSE = args.verbose
@@ -43,6 +70,9 @@ PERMISSION = args.permission
 BP_ACCOUNT = args.bp_account
 KEY = eospy.keys.EOSKey(args.key)
 SYMBOL = args.symbol
+GBM_PROD = args.gmb_prod
+GBM_VOTE = args.gmb_vote
+GENESIS = args.genesis
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -58,29 +88,36 @@ fh = logging.FileHandler(LOG_FILE)
 logger.addHandler(fh)
 fh.setFormatter(formatter)
 
-SCRIPT_PATH = os.path.dirname(os.path.abspath(
-    inspect.getfile(inspect.currentframe())))
+SCRIPT_PATH = os.path.dirname(
+    os.path.abspath(inspect.getfile(inspect.currentframe())))
 
 
 def get_system_token_supply():
     cleos = eospy.cleos.Cleos(url=URI)
-    data = cleos.get_table(
-        code='eosio.token', scope=SYMBOL, table='stat', limit=1)
+    data = cleos.get_table(code='eosio.token',
+                           scope=SYMBOL,
+                           table='stat',
+                           limit=1)
     amount = data['rows'][0]['supply'].split(' ')[0]
     return float(amount) * 10000
 
 
 def get_global_state():
     cleos = eospy.cleos.Cleos(url=URI)
-    data = cleos.get_table(
-        code='eosio', scope='eosio', table='global', limit=1)
+    data = cleos.get_table(code='eosio',
+                           scope='eosio',
+                           table='global',
+                           limit=1)
     return data['rows'][0]
 
 
 def get_producer():
     cleos = eospy.cleos.Cleos(url=URI)
-    data = cleos.get_table(
-        code='eosio', scope='eosio', table='producers', lower_bound=BP_ACCOUNT, limit=1)
+    data = cleos.get_table(code='eosio',
+                           scope='eosio',
+                           table='producers',
+                           lower_bound=BP_ACCOUNT,
+                           limit=1)
     return data['rows'][0]
 
 
@@ -95,7 +132,8 @@ def calculate_reward():
 
     last_block_time = int(round((time.time() - 500) * 1000000))
     last_pervote_bucket_fill = datetime.datetime.strptime(
-        global_state['last_pervote_bucket_fill'], '%Y-%m-%dT%H:%M:%S.%f').timestamp()*1000000
+        global_state['last_pervote_bucket_fill'],
+        '%Y-%m-%dT%H:%M:%S.%f').timestamp() * 1000000
     usecs_since_last_fill = last_block_time - last_pervote_bucket_fill
 
     pervote_bucket = int(global_state['pervote_bucket'])
@@ -115,6 +153,122 @@ def calculate_reward():
     return reward
 
 
+def claim_rewards():
+    cleos = eospy.cleos.Cleos(url=URI)
+    arguments = {"owner": BP_ACCOUNT}
+    payload = {
+        "account": "eosio",
+        "name": "claimrewards",
+        "authorization": [{
+            "actor": BP_ACCOUNT,
+            "permission": PERMISSION,
+        }],
+    }
+
+    data = cleos.abi_json_to_bin(payload['account'], payload['name'],
+                                 arguments)
+    payload['data'] = data['binargs']
+
+    trx = {"actions": [payload]}
+    trx['expiration'] = str(
+        (dt.datetime.utcnow() +
+         dt.timedelta(seconds=60)).replace(tzinfo=pytz.UTC))
+
+    try:
+        resp = cleos.push_transaction(trx, KEY, broadcast=True)
+        logger.info(resp)
+
+    except Exception as e:
+        logger.error(e)
+
+
+def claim_gbm_prod():
+    cleos = eospy.cleos.Cleos(url=URI)
+    arguments = {"owner": BP_ACCOUNT}
+    payload = {
+        "account": "eosio",
+        "name": "claimgbmprod",
+        "authorization": [{
+            "actor": BP_ACCOUNT,
+            "permission": PERMISSION,
+        }],
+    }
+
+    data = cleos.abi_json_to_bin(payload['account'], payload['name'],
+                                 arguments)
+    payload['data'] = data['binargs']
+
+    trx = {"actions": [payload]}
+    trx['expiration'] = str(
+        (dt.datetime.utcnow() +
+         dt.timedelta(seconds=60)).replace(tzinfo=pytz.UTC))
+
+    try:
+        resp = cleos.push_transaction(trx, KEY, broadcast=True)
+        logger.info(resp)
+
+    except Exception as e:
+        logger.error(e)
+
+
+def claim_gbm_vote():
+    cleos = eospy.cleos.Cleos(url=URI)
+    arguments = {"owner": BP_ACCOUNT}
+    payload = {
+        "account": "eosio",
+        "name": "claimgbmvote",
+        "authorization": [{
+            "actor": BP_ACCOUNT,
+            "permission": PERMISSION,
+        }],
+    }
+
+    data = cleos.abi_json_to_bin(payload['account'], payload['name'],
+                                 arguments)
+    payload['data'] = data['binargs']
+
+    trx = {"actions": [payload]}
+    trx['expiration'] = str(
+        (dt.datetime.utcnow() +
+         dt.timedelta(seconds=60)).replace(tzinfo=pytz.UTC))
+
+    try:
+        resp = cleos.push_transaction(trx, KEY, broadcast=True)
+        logger.info(resp)
+
+    except Exception as e:
+        logger.error(e)
+
+
+def claim_genesis():
+    cleos = eospy.cleos.Cleos(url=URI)
+    arguments = {"claimer": BP_ACCOUNT}
+    payload = {
+        "account": "eosio",
+        "name": "claimgenesis",
+        "authorization": [{
+            "actor": BP_ACCOUNT,
+            "permission": PERMISSION,
+        }],
+    }
+
+    data = cleos.abi_json_to_bin(payload['account'], payload['name'],
+                                 arguments)
+    payload['data'] = data['binargs']
+
+    trx = {"actions": [payload]}
+    trx['expiration'] = str(
+        (dt.datetime.utcnow() +
+         dt.timedelta(seconds=60)).replace(tzinfo=pytz.UTC))
+
+    try:
+        resp = cleos.push_transaction(trx, KEY, broadcast=True)
+        logger.info(resp)
+
+    except Exception as e:
+        logger.error(e)
+
+
 def main():
     if SYMBOL == 'EOS':
         reward = calculate_reward()
@@ -123,33 +277,15 @@ def main():
             logger.info('Rewards < 100. Exit')
             quit()
 
-    cleos = eospy.cleos.Cleos(url=URI)
-    arguments = {
-        "owner": BP_ACCOUNT
-    }
-    payload = {
-        "account": "eosio",
-        "name": "claimrewards",
-        "authorization": [{
-                "actor": BP_ACCOUNT,
-                "permission": PERMISSION,
-        }],
-    }
+    claim_rewards()
 
-    data = cleos.abi_json_to_bin(
-        payload['account'], payload['name'], arguments)
-    payload['data'] = data['binargs']
-
-    trx = {"actions": [payload]}
-    trx['expiration'] = str(
-        (dt.datetime.utcnow() + dt.timedelta(seconds=60)).replace(tzinfo=pytz.UTC))
-
-    try:
-        resp = cleos.push_transaction(trx, KEY, broadcast=True)
-        logger.info(resp)
-
-    except Exception as e:
-        logger.error(e)
+    if SYMBOL == 'WAX':
+        if GBM_PROD:
+            claim_gbm_prod()
+        if GBM_VOTE:
+            claim_gbm_vote()
+        if GENESIS:
+            claim_genesis()
 
 
 if __name__ == "__main__":
