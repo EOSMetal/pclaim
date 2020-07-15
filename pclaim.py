@@ -41,7 +41,7 @@ LOG_FILE = args.log_file
 URI = args.uri
 PERMISSION = args.permission
 BP_ACCOUNT = args.bp_account
-KEY = args.key
+KEY = eospy.keys.EOSKey(args.key)
 SYMBOL = args.symbol
 
 logger = logging.getLogger(__name__)
